@@ -2,18 +2,15 @@
   "name": "inventory-manager",
   "private": true,
   "version": "0.0.0",
-  "author": "",
+  "author": "SAMIM",
   "repository": {
     "type": "git",
-    "url": ""
+    "url": "https://github.com/Bartamous/InventoryUI.git"
   },
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "tauri":"tauri",
-    "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build",
     "lint": "eslint .",
     "preview": "vite preview"
   },
@@ -26,7 +23,6 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
-    "@tauri-apps/cli": "^2.10.0",
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",

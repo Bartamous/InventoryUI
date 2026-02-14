@@ -1,7 +1,8 @@
-import { useState, useRef, useEffect, useLayoutEffect, type MouseEvent } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, type MouseEvent } from 'react';
 import './App.css';
+import { checkLocation, type LocationCheckResult } from './pinpro';
 
-// ── Types ────────────────────────────────────────────────────────
+// Types 
 
 type LocationItem = {
   id: number;
@@ -37,18 +38,17 @@ type ModalType = 'location' | 'text' | 'line' | null;
 type Tool = 'select' | 'hand';
 type Cam = { x: number; y: number; z: number };
 
-// ── Constants ────────────────────────────────────────────────────
-
 const GRID = 30;
 const STORAGE_KEY = 'inventory-grid';
 const CAM_KEY = 'inventory-cam';
+const SERVER_KEY = 'inventory-server-url';
 const MAX_UNDO = 50;
 const LINE_HIT = 6;
 const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 5;
 const FONT = '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif';
 
-// ── Helpers ──────────────────────────────────────────────────────
+// Helpers
 
 const snap = (v: number) => Math.round(v / GRID) * GRID;
 
@@ -72,6 +72,26 @@ function saveCam(cam: Cam) {
   try { localStorage.setItem(CAM_KEY, JSON.stringify(cam)); } catch { /* silent */ }
 }
 
+function loadServerUrl(): string {
+  try { return localStorage.getItem(SERVER_KEY) || ''; }
+  catch { return ''; }
+}
+
+function saveServerUrl(url: string) {
+  try { localStorage.setItem(SERVER_KEY, url); } catch { /* silent */ }
+}
+
+const PARAM_KEY = 'inventory-param-name';
+
+function loadParamName(): string {
+  try { return localStorage.getItem(PARAM_KEY) || ''; }
+  catch { return ''; }
+}
+
+function saveParamName(name: string) {
+  try { localStorage.setItem(PARAM_KEY, name); } catch { /* silent */ }
+}
+
 function ptSegDist(px: number, py: number, x1: number, y1: number, x2: number, y2: number) {
   const dx = x2 - x1, dy = y2 - y1, len2 = dx * dx + dy * dy;
   if (len2 === 0) return Math.hypot(px - x1, py - y1);
@@ -87,7 +107,7 @@ function rectsHit(ax: number, ay: number, aw: number, ah: number, bx: number, by
   return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
 }
 
-// ── Component ────────────────────────────────────────────────────
+// App
 
 function App() {
   // Core state
@@ -113,6 +133,16 @@ function App() {
   const [editName, setEditName] = useState('');
   const [editContent, setEditContent] = useState('');
 
+  // Settings
+  const [showSettings, setShowSettings] = useState(false);
+  const [serverUrl, setServerUrl] = useState(loadServerUrl);
+  const [paramName, setParamName] = useState(loadParamName);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncProgress, setSyncProgress] = useState(0);
+  const [syncTotal, setSyncTotal] = useState(0);
+  const [hoveredId, setHoveredId] = useState<number | null>(null);
+  const locationDataRef = useRef<Map<number, LocationCheckResult['items']>>(new Map());
+
   // Form state
   const [locName, setLocName] = useState('');
   const [txtContent, setTxtContent] = useState('');
@@ -135,8 +165,7 @@ function App() {
   } | null>(null);
   const panRef = useRef<{ sx: number; sy: number; cx: number; cy: number } | null>(null);
 
-  // ── History ────────────────────────────────────────────────────
-
+  // History
   const pushHistory = () => {
     historyRef.current = [
       ...historyRef.current.slice(-(MAX_UNDO - 1)),
@@ -144,7 +173,7 @@ function App() {
     ];
   };
 
-  // ── Persistence ────────────────────────────────────────────────
+  // Keep data in sync
 
   useEffect(() => {
     const t = setTimeout(() => save(items), 200);
@@ -157,12 +186,18 @@ function App() {
   }, [cam]);
 
   useEffect(() => {
+    saveServerUrl(serverUrl);
+  }, [serverUrl]);
+
+  useEffect(() => {
+    saveParamName(paramName);
+  }, [paramName]);
+
+  useEffect(() => {
     const fn = () => { save(itemsRef.current); saveCam(camRef.current); };
     window.addEventListener('beforeunload', fn);
     return () => window.removeEventListener('beforeunload', fn);
   }, []);
-
-  // ── Close edit if item deleted ─────────────────────────────────
 
   useEffect(() => {
     if (editingItem && !items.find(it => it.id === editingItem.id)) {
@@ -170,7 +205,7 @@ function App() {
     }
   }, [items, editingItem]);
 
-  // ── Resize ─────────────────────────────────────────────────────
+  // Resize
 
   useEffect(() => {
     const fn = () => setRenderKey(k => k + 1);
@@ -178,7 +213,7 @@ function App() {
     return () => window.removeEventListener('resize', fn);
   }, []);
 
-  // ── Mouse wheel zoom ──────────────────────────────────────────
+  // Zoom
 
   useEffect(() => {
     const c = canvasRef.current;
@@ -203,8 +238,6 @@ function App() {
     return () => c.removeEventListener('wheel', handleWheel);
   }, []);
 
-  // ── Coordinate helpers ─────────────────────────────────────────
-
   const toWorld = (e: MouseEvent<HTMLCanvasElement>) => {
     const r = canvasRef.current!.getBoundingClientRect();
     const sx = e.clientX - r.left, sy = e.clientY - r.top;
@@ -222,7 +255,7 @@ function App() {
     return { x: (cw / 2 - cam.x) / cam.z, y: (ch / 2 - cam.y) / cam.z };
   };
 
-  // ── Item creation ──────────────────────────────────────────────
+  // Item creation 
 
   const addLocation = (name: string, x: number, y: number, status: 'green' | 'yellow' | 'red' = 'green') => {
     pushHistory();
@@ -248,7 +281,7 @@ function App() {
     }]);
   };
 
-  // ── Modal handlers ─────────────────────────────────────────────
+  // Modal handlers 
 
   const handleAddLoc = () => {
     if (!locName.trim()) return;
@@ -309,7 +342,7 @@ function App() {
     setActiveModal(null);
   };
 
-  // ── Edit handlers ──────────────────────────────────────────────
+  // Edit handlers
 
   const handleSaveEdit = () => {
     if (!editingItem) return;
@@ -332,7 +365,7 @@ function App() {
     setEditingItem(null);
   };
 
-  // ── Hit testing ────────────────────────────────────────────────
+  // Hit testing
 
   const hitTest = (wx: number, wy: number): InventoryItem | null => {
     const ctx = canvasRef.current?.getContext('2d');
@@ -351,7 +384,7 @@ function App() {
     return null;
   };
 
-  // ── Mouse handlers ─────────────────────────────────────────────
+  // Mouse handlers
 
   const handleMouseDown = (e: MouseEvent<HTMLCanvasElement>) => {
     if (!canvasRef.current) return;
@@ -470,6 +503,11 @@ function App() {
       });
 
       setSelectedIds(ids);
+    } else {
+      // Hover detection (idle state)
+      const hit = hitTest(wp.x, wp.y);
+      const newId = hit && hit.type === 'location' ? hit.id : null;
+      if (newId !== hoveredId) setHoveredId(newId);
     }
   };
 
@@ -514,8 +552,7 @@ function App() {
     }
   };
 
-  // ── Canvas rendering ───────────────────────────────────────────
-  // useLayoutEffect runs BEFORE browser paint, preventing white flashes
+  // Canvas
 
   useLayoutEffect(() => {
     const c = canvasRef.current;
@@ -526,7 +563,6 @@ function App() {
     const dpr = window.devicePixelRatio || 1;
     const w = c.offsetWidth, h = c.offsetHeight;
 
-    // Only resize the pixel buffer when the element size actually changes
     const needW = Math.round(w * dpr);
     const needH = Math.round(h * dpr);
     if (c.width !== needW || c.height !== needH) {
@@ -539,18 +575,17 @@ function App() {
     ctx.fillStyle = '#F5F5F7';
     ctx.fillRect(0, 0, w, h);
 
-    // Apply camera
+    // Camera
     ctx.save();
     ctx.translate(cam.x, cam.y);
     ctx.scale(cam.z, cam.z);
 
-    // Visible world bounds
+    // Bounds
     const wl = -cam.x / cam.z;
     const wt = -cam.y / cam.z;
     const wr = (w - cam.x) / cam.z;
     const wb = (h - cam.y) / cam.z;
 
-    // Adaptive dot grid — increase spacing when zoomed out to stay fast
     let gridStep = GRID;
     if (cam.z < 0.4) gridStep = GRID * 4;
     else if (cam.z < 0.7) gridStep = GRID * 2;
@@ -636,7 +671,7 @@ function App() {
       }
     });
 
-    // Selection box (world space)
+    // Selection box
     if (selBox) {
       const b = boxNorm(selBox.x1, selBox.y1, selBox.x2, selBox.y2);
       ctx.fillStyle = 'rgba(0, 122, 255, 0.06)';
@@ -657,14 +692,107 @@ function App() {
       ctx.stroke();
     }
 
-    ctx.restore();
-  }, [items, selectedIds, selBox, lineStart, activeModal, cam, renderKey]);
+    // Hover tooltip
+    if (hoveredId !== null) {
+      const loc = items.find(it => it.id === hoveredId && it.type === 'location') as LocationItem | undefined;
+      const data = locationDataRef.current.get(hoveredId);
+      if (loc && data && data.length > 0) {
+        const pad = 10 / cam.z;
+        const lineH = 16 / cam.z;
+        const headerH = 20 / cam.z;
+        const fontSize = 11 / cam.z;
+        const headerFontSize = 12 / cam.z;
+        const colGap = 12 / cam.z;
+        const maxRows = Math.min(data.length, 20);
 
-  // ── Keyboard ───────────────────────────────────────────────────
+        ctx.font = `600 ${headerFontSize}px ${FONT}`;
+        const headers = ['Tag', 'Item Type', 'Stock Number'];
+        const headerWidths = headers.map(h => ctx.measureText(h).width);
+
+        ctx.font = `${fontSize}px ${FONT}`;
+        const colWidths = [...headerWidths];
+        for (let i = 0; i < maxRows; i++) {
+          const row = data[i];
+          const vals = [String(row.tag), row.itemType, row.vstockNo];
+          vals.forEach((v, ci) => {
+            colWidths[ci] = Math.max(colWidths[ci], ctx.measureText(v).width);
+          });
+        }
+
+        const totalW = colWidths.reduce((a, b) => a + b, 0) + colGap * (colWidths.length - 1) + pad * 2;
+        const totalH = headerH + lineH * maxRows + pad * 2 + (data.length > maxRows ? lineH : 0);
+        const tx = loc.x;
+        const ty = loc.y + loc.height + 6 / cam.z;
+
+        // Background
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.08)';
+        ctx.shadowBlur = 8 / cam.z;
+        ctx.shadowOffsetY = 2 / cam.z;
+        ctx.shadowOffsetX = 0;
+        ctx.beginPath();
+        ctx.roundRect(tx, ty, totalW, totalH, 6 / cam.z);
+        ctx.fill();
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetY = 0;
+
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.06)';
+        ctx.lineWidth = 0.5 / cam.z;
+        ctx.beginPath();
+        ctx.roundRect(tx, ty, totalW, totalH, 6 / cam.z);
+        ctx.stroke();
+
+        // Header
+        ctx.font = `600 ${headerFontSize}px ${FONT}`;
+        ctx.fillStyle = '#86868B';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        let cx = tx + pad;
+        headers.forEach((h, ci) => {
+          ctx.fillText(h, cx, ty + pad);
+          cx += colWidths[ci] + colGap;
+        });
+
+        // Separator
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.06)';
+        ctx.lineWidth = 0.5 / cam.z;
+        ctx.beginPath();
+        ctx.moveTo(tx + pad, ty + pad + headerH - 4 / cam.z);
+        ctx.lineTo(tx + totalW - pad, ty + pad + headerH - 4 / cam.z);
+        ctx.stroke();
+
+        // Rows
+        ctx.font = `${fontSize}px ${FONT}`;
+        ctx.fillStyle = '#1D1D1F';
+        for (let i = 0; i < maxRows; i++) {
+          const row = data[i];
+          const vals = [String(row.tag), row.itemType, row.vstockNo];
+          let rx = tx + pad;
+          const ry = ty + pad + headerH + lineH * i;
+          vals.forEach((v, ci) => {
+            ctx.fillText(v, rx, ry);
+            rx += colWidths[ci] + colGap;
+          });
+        }
+
+        // "more" indicator
+        if (data.length > maxRows) {
+          ctx.fillStyle = '#86868B';
+          ctx.font = `${fontSize}px ${FONT}`;
+          ctx.fillText(`+${data.length - maxRows} more…`, tx + pad, ty + pad + headerH + lineH * maxRows);
+        }
+      }
+    }
+
+    ctx.restore();
+  }, [items, selectedIds, selBox, lineStart, activeModal, cam, renderKey, hoveredId]);
+
+  // Keyboard
 
   useEffect(() => {
     const onDown = (e: KeyboardEvent) => {
-      // Space → hand mode
+      // Space goes to hand mode
       if (e.code === 'Space' && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) {
         e.preventDefault();
         spaceRef.current = true;
@@ -706,7 +834,7 @@ function App() {
         setEditingItem(null);
       }
 
-      // Ctrl/Cmd+A
+      // Ctrl/Cmd+A Select all
       if (e.key === 'a' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
         setSelectedIds(new Set(itemsRef.current.map(it => it.id)));
@@ -728,7 +856,7 @@ function App() {
     };
   }, []);
 
-  // ── Undo button handler ────────────────────────────────────────
+  // Undo button handler
 
   const handleUndo = () => {
     const stack = historyRef.current;
@@ -737,11 +865,64 @@ function App() {
     setSelectedIds(new Set());
   };
 
-  // ── Input class ────────────────────────────────────────────────
+  // Sync locations against server
+
+  const BATCH_SIZE = 10;
+
+  const handleSync = useCallback(async () => {
+    if (!serverUrl.trim() || !paramName.trim()) {
+      setShowSettings(true);
+      return;
+    }
+
+    const locations = items.filter((it): it is LocationItem => it.type === 'location');
+    if (locations.length === 0) return;
+
+    setIsSyncing(true);
+    setSyncProgress(0);
+    setSyncTotal(locations.length);
+    pushHistory();
+
+    try {
+      const allResults: LocationCheckResult[] = new Array(locations.length);
+
+      for (let i = 0; i < locations.length; i += BATCH_SIZE) {
+        const batch = locations.slice(i, i + BATCH_SIZE);
+        const batchResults = await Promise.all(
+          batch.map(loc => checkLocation(serverUrl.trim(), loc.name, paramName.trim()))
+        );
+
+        // Store results
+        batchResults.forEach((res, j) => {
+          const idx = i + j;
+          allResults[idx] = res;
+          locationDataRef.current.set(locations[idx].id, res.items);
+        });
+
+        // Update progress & apply statuses incrementally
+        const checked = Math.min(i + BATCH_SIZE, locations.length);
+        setSyncProgress(checked);
+
+        const checkedIds = new Set(locations.slice(0, checked).map(l => l.id));
+        setItems(prev => prev.map(it => {
+          if (it.type !== 'location' || !checkedIds.has(it.id)) return it;
+          const idx = locations.findIndex(l => l.id === it.id);
+          if (idx === -1 || !allResults[idx]) return it;
+          return { ...it, status: allResults[idx].status };
+        }));
+      }
+    } finally {
+      setIsSyncing(false);
+      setSyncProgress(0);
+      setSyncTotal(0);
+    }
+  }, [serverUrl, paramName, items]);
+
+  // Input class
 
   const inputCls = 'w-full bg-white border border-gray-200 rounded-xl px-3.5 py-2.5 text-[15px] text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-colors';
 
-  // ── Cursor ─────────────────────────────────────────────────────
+  // Cursor
 
   const cursor = isPanning
     ? 'grabbing'
@@ -751,7 +932,7 @@ function App() {
     : isSelecting ? 'crosshair'
     : 'default';
 
-  // ── Render ─────────────────────────────────────────────────────
+  // Render
 
   return (
     <div className="relative w-screen h-screen overflow-hidden select-none">
@@ -769,7 +950,7 @@ function App() {
         style={{ cursor }}
       />
 
-      {/* ── Floating Toolbar ── */}
+      {/* Toolbar */}
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2">
         <div className="bg-white/70 backdrop-blur-2xl rounded-[18px] shadow-lg shadow-black/[0.06] px-2 py-1.5 flex items-center gap-0.5 border border-white/60">
           {/* Select tool */}
@@ -869,7 +1050,19 @@ function App() {
             </svg>
           </button>
 
-          {/* Delete — contextual */}
+          {/* Sync */}
+          <button
+            onClick={handleSync}
+            disabled={isSyncing}
+            className={`p-2.5 rounded-xl transition-all duration-150 hover:bg-black/[0.04] text-gray-400 disabled:opacity-40 disabled:pointer-events-none ${isSyncing ? 'animate-spin' : ''}`}
+            title="Sync locations with server"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.6} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </button>
+
+          {/* Delete selected items*/}
           {selectedIds.size > 0 && (
             <button
               onClick={() => {
@@ -886,10 +1079,28 @@ function App() {
               </svg>
             </button>
           )}
+
+          <div className="w-px h-5 bg-black/[0.08] mx-1" />
+
+          {/* Settings */}
+          <button
+            onClick={() => setShowSettings(true)}
+            className={`p-2.5 rounded-xl transition-all duration-150 ${
+              showSettings
+                ? 'bg-black/[0.06] text-gray-900'
+                : 'hover:bg-black/[0.04] text-gray-400'
+            }`}
+            title="Settings"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.6} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.573-1.066z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.6} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          </button>
         </div>
       </div>
 
-      {/* ── Zoom indicator ── */}
+      {/* Zoom indicator */}
       <div className="absolute bottom-6 right-6">
         <button
           onClick={() => setCam({ x: 0, y: 0, z: 1 })}
@@ -900,7 +1111,7 @@ function App() {
         </button>
       </div>
 
-      {/* ── Add Location Modal ── */}
+      {/* Add Location Modal */}
       {activeModal === 'location' && (
         <>
           <div className="absolute inset-0 bg-black/10 backdrop-blur-sm" onClick={() => setActiveModal(null)} />
@@ -968,7 +1179,7 @@ function App() {
         </>
       )}
 
-      {/* ── Add Text Modal ── */}
+      {/* Add Text Modal */}
       {activeModal === 'text' && (
         <>
           <div className="absolute inset-0 bg-black/10 backdrop-blur-sm" onClick={() => setActiveModal(null)} />
@@ -988,7 +1199,7 @@ function App() {
         </>
       )}
 
-      {/* ── Edit Location Panel ── */}
+      {/* Edit Location Panel */}
       {editingItem?.type === 'location' && (
         <>
           <div className="absolute inset-0 bg-black/10 backdrop-blur-sm" onClick={() => setEditingItem(null)} />
@@ -1015,7 +1226,7 @@ function App() {
         </>
       )}
 
-      {/* ── Edit Text Panel ── */}
+      {/* Edit Text Panel */}
       {editingItem?.type === 'text' && (
         <>
           <div className="absolute inset-0 bg-black/10 backdrop-blur-sm" onClick={() => setEditingItem(null)} />
@@ -1042,18 +1253,77 @@ function App() {
         </>
       )}
 
-      {/* ── Line Mode Indicator ── */}
+      {/* Line Mode Indicator */}
       {activeModal === 'line' && (
         <div className="absolute top-6 left-1/2 -translate-x-1/2 bg-white/80 backdrop-blur-2xl px-4 py-2 rounded-full shadow-sm shadow-black/[0.04] text-[13px] text-gray-500 font-medium border border-white/60">
           {lineStart ? 'Click to set end point' : 'Click to set start point'}
         </div>
       )}
 
-      {/* ── Selection count badge ── */}
-      {selectedIds.size > 1 && !activeModal && !editingItem && (
+      {/* Sync progress bar */}
+      {isSyncing && syncTotal > 0 && (
+        <div className="absolute top-6 left-1/2 -translate-x-1/2 z-20">
+          <div className="bg-white/90 backdrop-blur-2xl rounded-2xl shadow-lg shadow-black/[0.06] px-5 py-3 border border-white/60 min-w-[260px]">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[13px] font-medium text-gray-700">Syncing locations…</span>
+              <span className="text-[12px] tabular-nums text-gray-400 font-medium">{syncProgress}/{syncTotal}</span>
+            </div>
+            <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-blue-500 rounded-full transition-all duration-300 ease-out"
+                style={{ width: `${(syncProgress / syncTotal) * 100}%` }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Selection count badge */}
+      {selectedIds.size > 1 && !activeModal && !editingItem && !isSyncing && (
         <div className="absolute top-6 left-1/2 -translate-x-1/2 bg-white/80 backdrop-blur-2xl px-3.5 py-1.5 rounded-full shadow-sm shadow-black/[0.04] text-[13px] text-gray-500 font-medium border border-white/60">
           {selectedIds.size} selected
       </div>
+      )}
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <>
+          <div className="absolute inset-0 bg-black/10 backdrop-blur-sm" onClick={() => setShowSettings(false)} />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[360px] bg-white/95 backdrop-blur-2xl rounded-2xl shadow-2xl shadow-black/10 overflow-hidden z-10 border border-white/60">
+            <div className="p-6">
+              <h2 className="text-[17px] font-semibold text-gray-900 mb-5">Settings</h2>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1.5 tracking-wide">Server URL</label>
+                  <input
+                    type="url"
+                    value={serverUrl}
+                    onChange={e => setServerUrl(e.target.value)}
+                    placeholder="https://example.com/api"
+                    className={inputCls}
+                    autoFocus
+                  />
+                  <p className="text-[11px] text-gray-400 mt-1.5 px-1">
+                    The base URL for your inventory server.
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1.5 tracking-wide">Param Name</label>
+                  <input
+                    type="text"
+                    value={paramName}
+                    onChange={e => setParamName(e.target.value)}
+                    placeholder="e.g. locationId"
+                    className={inputCls}
+                  />
+                </div>
+              </div>
+              <div className="flex gap-2 mt-6">
+                <button onClick={() => setShowSettings(false)} className="flex-1 bg-gray-100 text-gray-600 py-2.5 rounded-xl hover:bg-gray-200 active:bg-gray-300 transition-colors text-sm font-medium">Done</button>
+              </div>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );
