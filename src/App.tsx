@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback, type MouseEvent } from 'react';
 import './App.css';
-import { checkLocation, type LocationCheckResult } from './pinpro';
+import { checkLocation, checkSite, type LocationCheckResult, type SiteCheckResult } from './pinpro';
 
 // Types 
 
@@ -81,15 +81,41 @@ function saveServerUrl(url: string) {
   try { localStorage.setItem(SERVER_KEY, url); } catch { /* silent */ }
 }
 
-const PARAM_KEY = 'inventory-param-name';
+const SITE_KEY = 'inventory-selected-site';
 
-function loadParamName(): string {
-  try { return localStorage.getItem(PARAM_KEY) || ''; }
+function loadSelectedSite(): SiteCheckResult | null {
+  try {
+    const raw = localStorage.getItem(SITE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+function saveSelectedSite(site: SiteCheckResult | null) {
+  try {
+    if (site) localStorage.setItem(SITE_KEY, JSON.stringify(site));
+    else localStorage.removeItem(SITE_KEY);
+  } catch { /* silent */ }
+}
+
+const USERNAME_KEY = 'inventory-username';
+const PASSWORD_KEY = 'inventory-password';
+
+function loadUsername(): string {
+  try { return localStorage.getItem(USERNAME_KEY) || ''; }
   catch { return ''; }
 }
 
-function saveParamName(name: string) {
-  try { localStorage.setItem(PARAM_KEY, name); } catch { /* silent */ }
+function saveUsername(u: string) {
+  try { localStorage.setItem(USERNAME_KEY, u); } catch { /* silent */ }
+}
+
+function loadPassword(): string {
+  try { return localStorage.getItem(PASSWORD_KEY) || ''; }
+  catch { return ''; }
+}
+
+function savePassword(p: string) {
+  try { localStorage.setItem(PASSWORD_KEY, p); } catch { /* silent */ }
 }
 
 function ptSegDist(px: number, py: number, x1: number, y1: number, x2: number, y2: number) {
@@ -136,11 +162,15 @@ function App() {
   // Settings
   const [showSettings, setShowSettings] = useState(false);
   const [serverUrl, setServerUrl] = useState(loadServerUrl);
-  const [paramName, setParamName] = useState(loadParamName);
+  const [selectedSite, setSelectedSite] = useState<SiteCheckResult | null>(loadSelectedSite);
+  const [sites, setSites] = useState<SiteCheckResult[]>([]);
+  const [loadingSites, setLoadingSites] = useState(false);
+  const [username, setUsername] = useState(loadUsername);
+  const [password, setPassword] = useState(loadPassword);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncProgress, setSyncProgress] = useState(0);
   const [syncTotal, setSyncTotal] = useState(0);
-  const [hoveredId, setHoveredId] = useState<number | null>(null);
+  const [sidePanelLocId, setSidePanelLocId] = useState<number | null>(null);
   const locationDataRef = useRef<Map<number, LocationCheckResult['items']>>(new Map());
 
   // Form state
@@ -190,8 +220,28 @@ function App() {
   }, [serverUrl]);
 
   useEffect(() => {
-    saveParamName(paramName);
-  }, [paramName]);
+    saveSelectedSite(selectedSite);
+  }, [selectedSite]);
+
+  useEffect(() => {
+    saveUsername(username);
+  }, [username]);
+
+  useEffect(() => {
+    savePassword(password);
+  }, [password]);
+
+  // Fetch sites when settings modal opens and serverUrl is set
+  const fetchSites = useCallback(async () => {
+    if (!serverUrl.trim()) return;
+    setLoadingSites(true);
+    try {
+      const result = await checkSite(serverUrl.trim());
+      setSites(result);
+    } finally {
+      setLoadingSites(false);
+    }
+  }, [serverUrl]);
 
   useEffect(() => {
     const fn = () => { save(itemsRef.current); saveCam(camRef.current); };
@@ -203,7 +253,10 @@ function App() {
     if (editingItem && !items.find(it => it.id === editingItem.id)) {
       setEditingItem(null);
     }
-  }, [items, editingItem]);
+    if (sidePanelLocId !== null && !items.find(it => it.id === sidePanelLocId)) {
+      setSidePanelLocId(null);
+    }
+  }, [items, editingItem, sidePanelLocId]);
 
   // Resize
 
@@ -347,14 +400,7 @@ function App() {
   const handleSaveEdit = () => {
     if (!editingItem) return;
     pushHistory();
-    if (editingItem.type === 'location') {
-      if (!editName.trim()) return;
-      setItems(prev => prev.map(it =>
-        it.id === editingItem.id && it.type === 'location'
-          ? { ...it, name: editName.trim() }
-          : it
-      ));
-    } else if (editingItem.type === 'text') {
+    if (editingItem.type === 'text') {
       if (!editContent.trim()) return;
       setItems(prev => prev.map(it =>
         it.id === editingItem.id && it.type === 'text'
@@ -363,6 +409,16 @@ function App() {
       ));
     }
     setEditingItem(null);
+  };
+
+  const handleSaveLocName = () => {
+    if (sidePanelLocId === null || !editName.trim()) return;
+    pushHistory();
+    setItems(prev => prev.map(it =>
+      it.id === sidePanelLocId && it.type === 'location'
+        ? { ...it, name: editName.trim() }
+        : it
+    ));
   };
 
   // Hit testing
@@ -422,6 +478,14 @@ function App() {
         setSelectedIds(ids);
       }
 
+      // Open side panel for single location click
+      if (hit.type === 'location' && !e.shiftKey) {
+        setSidePanelLocId(hit.id);
+        setEditName(hit.name);
+      } else if (hit.type !== 'location') {
+        setSidePanelLocId(null);
+      }
+
       pushHistory();
       setIsDragging(true);
 
@@ -444,6 +508,7 @@ function App() {
     } else {
       // Empty space: start rubber-band selection
       setSelectedIds(new Set());
+      setSidePanelLocId(null);
       setIsSelecting(true);
       setSelBox({ x1: wp.x, y1: wp.y, x2: wp.x, y2: wp.y });
     }
@@ -503,11 +568,6 @@ function App() {
       });
 
       setSelectedIds(ids);
-    } else {
-      // Hover detection (idle state)
-      const hit = hitTest(wp.x, wp.y);
-      const newId = hit && hit.type === 'location' ? hit.id : null;
-      if (newId !== hoveredId) setHoveredId(newId);
     }
   };
 
@@ -542,7 +602,8 @@ function App() {
     if (!hit) return;
 
     if (hit.type === 'location') {
-      setEditingItem(hit);
+      // Side panel handles location editing now
+      setSidePanelLocId(hit.id);
       setEditName(hit.name);
       setSelectedIds(new Set([hit.id]));
     } else if (hit.type === 'text') {
@@ -692,101 +753,8 @@ function App() {
       ctx.stroke();
     }
 
-    // Hover tooltip
-    if (hoveredId !== null) {
-      const loc = items.find(it => it.id === hoveredId && it.type === 'location') as LocationItem | undefined;
-      const data = locationDataRef.current.get(hoveredId);
-      if (loc && data && data.length > 0) {
-        const pad = 10 / cam.z;
-        const lineH = 16 / cam.z;
-        const headerH = 20 / cam.z;
-        const fontSize = 11 / cam.z;
-        const headerFontSize = 12 / cam.z;
-        const colGap = 12 / cam.z;
-        const maxRows = Math.min(data.length, 20);
-
-        ctx.font = `600 ${headerFontSize}px ${FONT}`;
-        const headers = ['Tag', 'Item Type', 'Stock Number'];
-        const headerWidths = headers.map(h => ctx.measureText(h).width);
-
-        ctx.font = `${fontSize}px ${FONT}`;
-        const colWidths = [...headerWidths];
-        for (let i = 0; i < maxRows; i++) {
-          const row = data[i];
-          const vals = [String(row.tag), row.itemType, row.vstockNo];
-          vals.forEach((v, ci) => {
-            colWidths[ci] = Math.max(colWidths[ci], ctx.measureText(v).width);
-          });
-        }
-
-        const totalW = colWidths.reduce((a, b) => a + b, 0) + colGap * (colWidths.length - 1) + pad * 2;
-        const totalH = headerH + lineH * maxRows + pad * 2 + (data.length > maxRows ? lineH : 0);
-        const tx = loc.x;
-        const ty = loc.y + loc.height + 6 / cam.z;
-
-        // Background
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
-        ctx.shadowColor = 'rgba(0, 0, 0, 0.08)';
-        ctx.shadowBlur = 8 / cam.z;
-        ctx.shadowOffsetY = 2 / cam.z;
-        ctx.shadowOffsetX = 0;
-        ctx.beginPath();
-        ctx.roundRect(tx, ty, totalW, totalH, 6 / cam.z);
-        ctx.fill();
-        ctx.shadowColor = 'transparent';
-        ctx.shadowBlur = 0;
-        ctx.shadowOffsetY = 0;
-
-        ctx.strokeStyle = 'rgba(0, 0, 0, 0.06)';
-        ctx.lineWidth = 0.5 / cam.z;
-        ctx.beginPath();
-        ctx.roundRect(tx, ty, totalW, totalH, 6 / cam.z);
-        ctx.stroke();
-
-        // Header
-        ctx.font = `600 ${headerFontSize}px ${FONT}`;
-        ctx.fillStyle = '#86868B';
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'top';
-        let cx = tx + pad;
-        headers.forEach((h, ci) => {
-          ctx.fillText(h, cx, ty + pad);
-          cx += colWidths[ci] + colGap;
-        });
-
-        // Separator
-        ctx.strokeStyle = 'rgba(0, 0, 0, 0.06)';
-        ctx.lineWidth = 0.5 / cam.z;
-        ctx.beginPath();
-        ctx.moveTo(tx + pad, ty + pad + headerH - 4 / cam.z);
-        ctx.lineTo(tx + totalW - pad, ty + pad + headerH - 4 / cam.z);
-        ctx.stroke();
-
-        // Rows
-        ctx.font = `${fontSize}px ${FONT}`;
-        ctx.fillStyle = '#1D1D1F';
-        for (let i = 0; i < maxRows; i++) {
-          const row = data[i];
-          const vals = [String(row.tag), row.itemType, row.vstockNo];
-          let rx = tx + pad;
-          const ry = ty + pad + headerH + lineH * i;
-          vals.forEach((v, ci) => {
-            ctx.fillText(v, rx, ry);
-            rx += colWidths[ci] + colGap;
-          });
-        }
-
-        // "more" indicator
-        if (data.length > maxRows) {
-          ctx.fillStyle = '#86868B';
-          ctx.font = `${fontSize}px ${FONT}`;
-          ctx.fillText(`+${data.length - maxRows} more…`, tx + pad, ty + pad + headerH + lineH * maxRows);
-        }
-      }
-    }
-
     ctx.restore();
-  }, [items, selectedIds, selBox, lineStart, activeModal, cam, renderKey, hoveredId]);
+  }, [items, selectedIds, selBox, lineStart, activeModal, cam, renderKey]);
 
   // Keyboard
 
@@ -870,7 +838,7 @@ function App() {
   const BATCH_SIZE = 10;
 
   const handleSync = useCallback(async () => {
-    if (!serverUrl.trim() || !paramName.trim()) {
+    if (!serverUrl.trim() || !selectedSite || !username.trim() || !password.trim()) {
       setShowSettings(true);
       return;
     }
@@ -889,7 +857,7 @@ function App() {
       for (let i = 0; i < locations.length; i += BATCH_SIZE) {
         const batch = locations.slice(i, i + BATCH_SIZE);
         const batchResults = await Promise.all(
-          batch.map(loc => checkLocation(serverUrl.trim(), loc.name, paramName.trim()))
+          batch.map(loc => checkLocation(serverUrl.trim(), loc.name, selectedSite.siteId, username.trim(), password.trim()))
         );
 
         // Store results
@@ -916,7 +884,7 @@ function App() {
       setSyncProgress(0);
       setSyncTotal(0);
     }
-  }, [serverUrl, paramName, items]);
+  }, [serverUrl, selectedSite, username, password, items]);
 
   // Input class
 
@@ -1199,32 +1167,83 @@ function App() {
         </>
       )}
 
-      {/* Edit Location Panel */}
-      {editingItem?.type === 'location' && (
-        <>
-          <div className="absolute inset-0 bg-black/10 backdrop-blur-sm" onClick={() => setEditingItem(null)} />
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[360px] bg-white/95 backdrop-blur-2xl rounded-2xl shadow-2xl shadow-black/10 overflow-hidden z-10 border border-white/60">
-            <div className="p-6">
-              <h2 className="text-[17px] font-semibold text-gray-900 mb-5">Edit Location</h2>
-              <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1.5 tracking-wide">Name</label>
+      {/* Location Side Panel */}
+      {sidePanelLocId !== null && (() => {
+        const loc = items.find(it => it.id === sidePanelLocId && it.type === 'location') as LocationItem | undefined;
+        if (!loc) return null;
+        const data = locationDataRef.current.get(sidePanelLocId) ?? [];
+        return (
+          <div className="absolute top-0 right-0 h-full w-[360px] bg-white/95 backdrop-blur-2xl shadow-2xl shadow-black/10 border-l border-gray-200/60 z-10 flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+              <h2 className="text-[17px] font-semibold text-gray-900">Location</h2>
+              <button
+                onClick={() => setSidePanelLocId(null)}
+                className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 active:bg-gray-200 transition-colors text-gray-400 hover:text-gray-600"
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 1l12 12M13 1L1 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+              </button>
+            </div>
+
+            {/* Name edit */}
+            <div className="px-5 py-4 border-b border-gray-100">
+              <label className="block text-xs font-medium text-gray-500 mb-1.5 tracking-wide">Name</label>
+              <div className="flex gap-2">
                 <input
                   type="text"
                   value={editName}
                   onChange={e => setEditName(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && handleSaveEdit()}
-                  className={inputCls}
+                  onKeyDown={e => e.key === 'Enter' && handleSaveLocName()}
+                  className={inputCls + ' flex-1'}
                   autoFocus
                 />
-              </div>
-              <div className="flex gap-2 mt-6">
-                <button onClick={() => setEditingItem(null)} className="flex-1 bg-gray-100 text-gray-600 py-2.5 rounded-xl hover:bg-gray-200 active:bg-gray-300 transition-colors text-sm font-medium">Cancel</button>
-                <button onClick={handleSaveEdit} className="flex-1 bg-blue-500 text-white py-2.5 rounded-xl hover:bg-blue-600 active:bg-blue-700 transition-colors text-sm font-medium">Save</button>
+                <button
+                  onClick={handleSaveLocName}
+                  disabled={!editName.trim() || editName.trim() === loc.name}
+                  className="px-3 py-2 bg-blue-500 text-white rounded-xl hover:bg-blue-600 active:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-sm font-medium shrink-0"
+                >
+                  Save
+                </button>
               </div>
             </div>
+
+            {/* Status */}
+            <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-2">
+              <div className={`w-2.5 h-2.5 rounded-full ${loc.status === 'green' ? 'bg-emerald-400' : loc.status === 'red' ? 'bg-red-400' : 'bg-amber-400'}`} />
+              <span className="text-[13px] text-gray-600 font-medium capitalize">{loc.status === 'green' ? 'Clear' : loc.status === 'red' ? 'Items Found' : 'Unknown'}</span>
+              <span className="text-[13px] text-gray-400 ml-auto">{data.length} item{data.length !== 1 ? 's' : ''}</span>
+            </div>
+
+            {/* Items list */}
+            <div className="flex-1 overflow-y-auto">
+              {data.length === 0 ? (
+                <div className="px-5 py-8 text-center text-[13px] text-gray-400">
+                  No items at this location.
+                </div>
+              ) : (
+                <table className="w-full text-[13px]">
+                  <thead>
+                    <tr className="border-b border-gray-100 text-left">
+                      <th className="px-5 py-2.5 text-xs font-medium text-gray-400 tracking-wide">Item Type</th>
+                      <th className="px-2 py-2.5 text-xs font-medium text-gray-400 tracking-wide">Tag</th>
+                      <th className="px-5 py-2.5 text-xs font-medium text-gray-400 tracking-wide text-right">Stock Number</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.map((item, i) => (
+                      <tr key={i} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
+                        <td className="px-5 py-2 text-gray-900 font-medium">{item.itemType}</td>
+                        <td className="px-2 py-2 text-gray-600 tabular-nums">{item.tag}</td>
+                        <td className="px-5 py-2 text-gray-500 tabular-nums text-right">{item.vstockNo}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
           </div>
-        </>
-      )}
+        );
+      })()}
 
       {/* Edit Text Panel */}
       {editingItem?.type === 'text' && (
@@ -1308,13 +1327,63 @@ function App() {
                   </p>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1.5 tracking-wide">Param Name</label>
+                  <label className="block text-xs font-medium text-gray-500 mb-1.5 tracking-wide">Site</label>
+                  <div className="flex gap-2">
+                    <select
+                      value={selectedSite ? String(selectedSite.siteId) : ''}
+                      onChange={e => {
+                        const site = sites.find(s => String(s.siteId) === e.target.value);
+                        setSelectedSite(site ?? null);
+                      }}
+                      className={inputCls + ' flex-1'}
+                      disabled={loadingSites || sites.length === 0}
+                    >
+                      <option value="">
+                        {loadingSites ? 'Loading sites…' : sites.length === 0 ? 'No sites loaded' : 'Select a site'}
+                      </option>
+                      {sites.map(s => (
+                        <option key={s.siteId} value={String(s.siteId)}>
+                          {s.yardName} ({s.shortCode})
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={fetchSites}
+                      disabled={!serverUrl.trim() || loadingSites}
+                      className="px-3 py-2.5 bg-blue-500 text-white rounded-xl hover:bg-blue-600 active:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-sm font-medium shrink-0"
+                    >
+                      {loadingSites ? (
+                        <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
+                      ) : 'Fetch'}
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-gray-400 mt-1.5 px-1">
+                    {selectedSite ? `Selected: ${selectedSite.yardName}` : 'Enter server URL and click Fetch to load sites.'}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1.5 tracking-wide">Username</label>
                   <input
                     type="text"
-                    value={paramName}
-                    onChange={e => setParamName(e.target.value)}
-                    placeholder="e.g. locationId"
+                    value={username}
+                    onChange={e => setUsername(e.target.value)}
+                    placeholder="Username"
                     className={inputCls}
+                    autoComplete="username"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1.5 tracking-wide">Password</label>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    placeholder="Password"
+                    className={inputCls}
+                    autoComplete="current-password"
                   />
                 </div>
               </div>

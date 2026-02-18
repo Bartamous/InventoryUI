@@ -22,9 +22,19 @@ function corsProxy(): Plugin {
         const parsed = new URL(target);
         const mod = parsed.protocol === 'https:' ? https : http;
 
+        // Forward auth header if provided
+        const proxyHeaders: Record<string, string> = { host: parsed.host };
+        const auth = req.headers['x-auth'] as string | undefined;
+        if (auth) {
+          proxyHeaders['Authorization'] = auth;
+          proxyHeaders['Accept-Encoding'] = 'gzip';
+          proxyHeaders['Connection'] = 'Keep-Alive';
+          proxyHeaders['User-Agent'] = 'okhttp/3.10.0';
+        }
+
         const proxyReq = mod.request(
           parsed,
-          { method: req.method, headers: { host: parsed.host } },
+          { method: req.method, headers: proxyHeaders },
           (proxyRes) => {
             res.writeHead(proxyRes.statusCode ?? 502, proxyRes.headers);
             proxyRes.pipe(res, { end: true });

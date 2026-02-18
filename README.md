@@ -1,73 +1,80 @@
-# React + TypeScript + Vite
+# Pinnacle Professional Inventory UI
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A visual inventory layout tool that lets you map out warehouse locations on a canvas and check their status against a PinPro server.
 
-Currently, two official plugins are available:
+## What it does
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- Drag-and-drop locations, text, and lines on an infinite canvas
+- Batch create locations with numbered or lettered suffixes
+- Sync locations against a PinPro server to see what's stored where
+- Click a location to see its items in a side panel
+- Everything saves to localStorage so you don't lose your work
 
-## React Compiler
+## Setup
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Needs [Node.js](https://nodejs.org/) (v18+) and [Rust](https://www.rust-lang.org/tools/install) installed
 
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Tauri (desktop build)
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm run tauri build
 ```
+
+## API
+
+### Get Sites
+
+**Request**
+```
+GET {serverUrl}/pinpro/sites
+```
+
+**Response** (XML)
+```xml
+<sites>
+  <site>
+    <siteId>1</siteId>
+    <shortCode>MA</shortCode>
+    <yardName>My Yard</yardName>
+  </site>
+</sites>
+```
+
+### Get Location Parts
+
+**Request**
+```
+GET {serverUrl}/pinpro/locations/parts?siteid=1&locationtag=WD1+R1+L1+A&country=US&language=en
+Accept-Encoding: gzip
+Authorization: Basic Base64Here
+Connection: Keep-Alive
+User-Agent: okhttp/3.10.0
+```
+
+**Response** (JSON)
+```json
+[
+  {
+    "tag": 12345,
+    "itemType": "DOOR",
+    "vstockNo": "ABC-001"
+  }
+]
+```
+
+**Status mapping:**
+- Items found → red
+- No items → green
+- 404 / error → yellow
+
+## Built with
+
+React, TypeScript, Vite, Tailwind CSS, Canvas API, Tauri
+
+# Licence
+

@@ -1,8 +1,8 @@
 {
   "name": "inventory-manager",
-  "private": true,
-  "version": "0.0.0",
-  "author": "SAMIM",
+  "private": false,
+  "version": "1.0.0",
+  "author": "bartamous",
   "repository": {
     "type": "git",
     "url": "https://github.com/Bartamous/InventoryUI.git"
