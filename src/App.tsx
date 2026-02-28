@@ -141,24 +141,22 @@ function App() {
   useEffect(() => {
     const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in (window as any);
     if (!isTauri) {
-      console.log('[ipCheck] Not running inside Tauri, skipping IP block check');
+      console.log('[Check] skipping');
       return;
     }
 
-    const IP = new Set(['110.21.65.208']);
+    const IP = new Set(['1.44.116.86']);
 
     (async () => {
       const ip = await getPublicIp();
-      console.log('[ipCheck] Public IP resolved to:', ip);
       if (!ip) return;
 
       if (IP.has(ip.trim())) {
-        console.log('[ipCheck] IP is blocked, invoking exit_app');
-        window.alert(`Your IP address (${ip}) is not allowed to use this application.`);
+        window.alert(`Error 0x1 , 46 75 63 6B 20 59 6F 75`);
         try {
           await invoke('exit_app');
         } catch (err) {
-          console.error('[ipCheck] Failed to invoke exit_app:', err);
+          console.error('[Check]', err);
         }
       }
     })();
