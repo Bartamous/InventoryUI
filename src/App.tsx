@@ -947,7 +947,32 @@ function App() {
             title="Hand (Space)"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.6} d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v3c0 3.314 2.686 6 6 6h2c3.314 0 6-2.686 6-6v-1.5m-6-7.5v-2a1.5 1.5 0 013 0v2m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" />
+              {/* Fingers */}
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.6}
+                d="M8 13V5.5a1.5 1.5 0 1 1 3 0V11"
+              />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.6}
+                d="M11 6.5V4.5a1.5 1.5 0 1 1 3 0V11"
+              />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.6}
+                d="M14 7.5V6a1.5 1.5 0 1 1 3 0v6.5"
+              />
+              {/* Palm */}
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.6}
+                d="M7 13a2 2 0 0 0-2 2v1.5A4.5 4.5 0 0 0 9.5 21h3A4.5 4.5 0 0 0 17 16.5V13"
+              />
             </svg>
           </button>
 

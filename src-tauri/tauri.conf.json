@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Pinnacle Inventory UI",
-  "version": "0.1.0",
-  "identifier": "com.starbit-technology.dev",
+  "version": "1.0.0",
+  "identifier": "com.Bartam0us.dev",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
