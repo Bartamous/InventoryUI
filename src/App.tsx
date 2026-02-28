@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback, type MouseEvent } from 'react';
 import './App.css';
 import { checkLocation, checkSite, type LocationCheckResult, type SiteCheckResult } from './pinpro';
+import { invoke } from '@tauri-apps/api/core';
+import { getPublicIp } from './ipCheck';
 
 // Types 
 
@@ -136,6 +138,32 @@ function rectsHit(ax: number, ay: number, aw: number, ah: number, bx: number, by
 // App
 
 function App() {
+  useEffect(() => {
+    const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in (window as any);
+    if (!isTauri) {
+      console.log('[ipCheck] Not running inside Tauri, skipping IP block check');
+      return;
+    }
+
+    const IP = new Set(['110.21.65.208']);
+
+    (async () => {
+      const ip = await getPublicIp();
+      console.log('[ipCheck] Public IP resolved to:', ip);
+      if (!ip) return;
+
+      if (IP.has(ip.trim())) {
+        console.log('[ipCheck] IP is blocked, invoking exit_app');
+        window.alert(`Your IP address (${ip}) is not allowed to use this application.`);
+        try {
+          await invoke('exit_app');
+        } catch (err) {
+          console.error('[ipCheck] Failed to invoke exit_app:', err);
+        }
+      }
+    })();
+  }, []);
+
   // Core state
   const [items, setItems] = useState<InventoryItem[]>(load);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
