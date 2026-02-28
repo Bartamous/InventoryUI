@@ -10,10 +10,34 @@ A visual inventory layout tool that lets you map out warehouse locations on a ca
 - Click a location to see its items in a side panel
 - Everything saves to localStorage so you don't lose your work
 
+![canvas view](/public/canvas_view.png)
+
+## Using the App
 ## Setup
 
-Needs [Node.js](https://nodejs.org/) (v18+) and [Rust](https://www.rust-lang.org/tools/install) installed
+To setup open the settings panel on the dock and fill in the server url as "http://SERVER-IP-HERE" eg; http://192.168.0.100 , if the server URL is unknown try "http://pinpro" on a pinnacle setup computer.
 
+Then click Fetch and select your yard
+
+After that username and password can be filled in 
+
+**IMPORTANT** Ensure you have a username and password is registered and can be used in Barcode Scanner Pro
+
+## Adding Locations
+
+To add locations select the location icon on the bottom dock.
+
+When entering in a location its important to include "1-" in the location, for example if your printed location tag reads as "HEADLAMPS L2" , ensure the location entered into the app is "1-HEADLAMPS L2"
+
+After locations are added the refresh icon can be pressed to scan the current locations.
+
+![location full](/public/location_full.png)
+![location empty](/public/location_empty.png)
+![row named](/public/row_named.png)
+
+### Dev Setup
+
+Ensure [Node.js](https://nodejs.org/) (v18+) and [Rust](https://www.rust-lang.org/tools/install) installed
 ```bash
 npm install
 npm run dev
@@ -72,9 +96,5 @@ User-Agent: okhttp/3.10.0
 - No items → green
 - 404 / error → yellow
 
-## Built with
-
-React, TypeScript, Vite, Tailwind CSS, Canvas API, Tauri
-
 # Licence
-
+MIT
