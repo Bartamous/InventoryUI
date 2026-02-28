@@ -10,7 +10,7 @@ A visual inventory layout tool that lets you map out warehouse locations on a ca
 - Click a location to see its items in a side panel
 - Everything saves to localStorage so you don't lose your work
 
-![canvas view](/dist/canvas_view.png)
+![canvas view](/public/canvas_view.png)
 
 ## Using the App
 ## Setup
@@ -31,9 +31,9 @@ When entering in a location its important to include "1-" in the location, for e
 
 After locations are added the refresh icon can be pressed to scan the current locations.
 
-![location full](/dist/location_full.png)
-![location empty](/dist/location_empty.png)
-![row named](/dist/row_named.png)
+![location full](/public/location_full.png)
+![location empty](/public/location_empty.png)
+![row named](/public/row_named.png)
 
 ### Dev Setup
 
