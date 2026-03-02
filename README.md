@@ -97,4 +97,4 @@ User-Agent: okhttp/3.10.0
 - 404 / error → yellow
 
 # Licence
-MIT
+AGPL-3.0
