@@ -63,7 +63,7 @@ GET {serverUrl}/pinpro/sites
 <sites>
   <site>
     <siteId>1</siteId>
-    <shortCode>MA</shortCode>
+    <shortCode>XX</shortCode>
     <yardName>My Yard</yardName>
   </site>
 </sites>
@@ -73,7 +73,7 @@ GET {serverUrl}/pinpro/sites
 
 **Request**
 ```
-GET {serverUrl}/pinpro/locations/parts?siteid=1&locationtag=WD1+R1+L1+A&country=US&language=en
+GET {serverUrl}/pinpro/locations/parts?siteid=1&locationtag=1-WD1+R1+L1+A&country=US&language=en
 Accept-Encoding: gzip
 Authorization: Basic Base64Here
 Connection: Keep-Alive
